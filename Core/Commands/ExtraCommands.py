@@ -16,8 +16,10 @@ import parsedatetime
 from Core.Commands.Dispatcher import DispatcherSingleton
 from Core.Util import UtilBot
 from Libraries import Genius
+import time
 
 
+flips = []
 reminders = []
 
 
@@ -456,3 +458,94 @@ def quote(bot, event, *args):
                 fetch) + ' of ' + str(numQuotes) + ']')
         else:
             bot.send_message(event.conv, "\"" + soup.quote.text + "\"" + ' -' + soup.author.text)
+
+
+@DispatcherSingleton.register
+def eddy(bot, event, *args):
+    """
+    **Eddy:**
+    Usage: /eddy
+    Purpose: https://www.youtube.com/watch?v=MN8UT2IXEFA&list=PLlkfuF3JQH0LIRS0heG_aUB5s-uGV9Y2A&index=2
+    """
+    segments = [hangups.ChatMessageSegment('ALLES WIRD ANDERS DIESES MAL!', is_bold=True),
+                hangups.ChatMessageSegment('\n', hangups.SegmentType.LINE_BREAK),
+                hangups.ChatMessageSegment('https://youtu.be/MN8UT2IXEFA', hangups.SegmentType.LINK, link_target='https://youtu.be/MN8UT2IXEFA')]
+    bot.send_message_segments(event.conv, segments)
+
+
+@DispatcherSingleton.register
+def flip(bot, event, *args):
+    """
+    **Flip:**
+    Usage: /flip <optional: date [defaults to today]> <optional: time [defaults to an hour from now]> <message> {/remind 1/1/15 2:00PM Call mom}
+    Usage: /flip
+    Usage /flip delete <index to delete> {/remind delete 1}
+    Purpose: Will post a message on the date and time specified to the current chat. With no arguments, it'll list all the reminders."""
+
+    # Show all reminders
+    if len(args) == 0:
+        segments = [hangups.ChatMessageSegment('Flips:', is_bold=True),
+                    hangups.ChatMessageSegment('\n', hangups.SegmentType.LINE_BREAK)]
+        if len(flips) > 0:
+            for x in range(0, len(flips)):
+                flip = flips[x]
+                flip_timer = flips[0]
+                flip_text = flips[1]
+                flip_set_time = flips[2]
+                date_to_post = flip_set_time + timedelta(seconds=flip_timer.interval)
+                segments.append(
+                    hangups.ChatMessageSegment(
+                        str(x + 1) + ' - ' + date_to_post.strftime('%m/%d/%y %I:%M%p') + ' : ' + flip_text))
+                segments.append(hangups.ChatMessageSegment('\n', hangups.SegmentType.LINE_BREAK))
+            segments.pop()
+            bot.send_message_segments(event.conv, segments)
+        else:
+            bot.send_message(event.conv, "Derzeit keine Portal Flips gespeichert.")
+        return
+
+    # Delete a reminder
+    if args[0] == 'delete':
+        try:
+            x = int(args[1])
+            x -= 1
+        except ValueError:
+            bot.send_message(event.conv, 'Invalid integer: ' + args[1])
+            return
+        if x in range(0, len(flips)):
+            flip_to_remove_text = flips[x][1]
+            flips[x][0].cancel()
+            flips.remove(flips[x])
+            bot.send_message(event.conv, 'Portal Flip gelöscht: ' + reminder_to_remove_text)
+        else:
+            bot.send_message(event.conv, 'Invalid integer: ' + str(x + 1))
+        return
+
+    # Function for sending reminders to a chat.
+    def send_reminder(bot, conv, flip_time, flip_text, loop):
+        asyncio.set_event_loop(loop)
+        bot.send_message(conv, flip_text)
+        for flip in flips:
+            if flip[0].interval == flip_time and flip[1] == flip_text:
+                flips.remove(flip)
+
+    # Set a new reminder
+    args = list(args)
+    flip_text = ' '.join(args)
+    result = parsedatetime.nlp(flip_text)
+    flip_time = result[0][0]
+    flip_text.replace(result[0][-1], '')
+    if flip_text.strip() == '':
+        bot.send_message(event.conv, 'Kein Portal Name übergeben')
+        return
+
+    current_time = datetime.now()
+    if flip_time < current_time:
+        bot.send_message("Invalid Date: {}".format(reminder_time.strftime('%B %d, %Y %I:%M%p')))
+
+    flip_interval = (flip_time - current_time).seconds
+
+    flip_timer = threading.Timer(flip_interval, send_flip,
+                                     [bot, event.conv, flip_interval, flip_text, asyncio.get_event_loop()])
+    flipss.append((flip_timer, flip_text, current_time))
+    flip_timer.start()
+    bot.send_message(event.conv, "Portal Flip Immun bis: " + flip_time.strftime('%B %d, %Y %I:%M%p'))
